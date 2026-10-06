@@ -1,0 +1,236 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Таблица кормов для кошек</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; background: #f7f7f7; }
+  h1 { font-size: 20px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #999; padding: 6px 8px; font-size: 13px; text-align: center; }
+  th { background: #e8e8e8; position: sticky; top: 0; }
+  td[contenteditable]:focus { outline: 2px solid #4a90e2; background: #eef6ff; }
+  .color-cell { cursor: pointer; width: 60px; }
+  .color-cell span { display:block; width: 100%; height: 22px; border-radius: 3px; border: 1px solid #ccc; }
+  .ok { color: green; font-weight: bold; }
+  .bad { color: red; font-weight: bold; }
+  button { padding: 6px 12px; margin: 5px 5px 15px 0; cursor: pointer; }
+  input[type="color"] { position: absolute; visibility: hidden; }
+  .legend { font-size: 12px; color: #555; margin-bottom: 10px; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { background: #dcdcdc; }
+  th .arrow { font-size: 10px; color: #666; margin-left: 3px; }
+</style>
+</head>
+<body>
+
+<h1>Таблица кормов для кошек</h1>
+<div class="legend">Клик по ячейке — редактирование. Клик по ячейке «Цвет пачки» — выбор цвета. Клик по заголовку со стрелкой ↕ — сортировка. Данные сохраняются в браузере.</div>
+
+<button onclick="addRow()">+ Добавить строку</button>
+<button onclick="exportCSV()">Экспорт CSV</button>
+<button onclick="clearAll()">Очистить всё</button>
+
+<table id="tbl">
+  <thead>
+    <tr>
+      <th class="sortable" data-col="0" data-type="text">Бренд корма <span class="arrow">↕</span></th>
+      <th class="sortable" data-col="1" data-type="text">Вкус <span class="arrow">↕</span></th>
+      <th>Категория кошек</th>
+      <th>Цвет пачки</th>
+      <th class="sortable" data-col="4" data-type="number">Мясо, % <span class="arrow">↕</span></th>
+      <th class="sortable" data-col="5" data-type="number">Цена <span class="arrow">↕</span></th>
+      <th class="sortable" data-col="6" data-type="number">Кальций &lt;0,3% <span class="arrow">↕</span></th>
+      <th class="sortable" data-col="7" data-type="number">Фосфор &lt;0,25% <span class="arrow">↕</span></th>
+      <th class="sortable" data-col="8" data-type="number">Магний 0,02–0,03% <span class="arrow">↕</span></th>
+      <th>Багира</th>
+      <th>Саша</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<input type="color" id="picker">
+
+<script>
+const KEY = 'catFoodTable_v1';
+const tbody = document.querySelector('#tbl tbody');
+const picker = document.getElementById('picker');
+let currentColorCell = null;
+let sortState = { col: null, dir: 1 };
+
+const COLS = 11; // до колонки "Саша" включительно
+
+function makeRow(data = {}) {
+  const tr = document.createElement('tr');
+
+  for (let i = 0; i < COLS; i++) {
+    const td = document.createElement('td');
+    if (i === 3) { // цвет пачки
+      td.className = 'color-cell';
+      td.innerHTML = '<span></span>';
+      td.onclick = () => {
+        currentColorCell = td.querySelector('span');
+        picker.value = rgbToHex(getComputedStyle(currentColorCell).backgroundColor) || '#ffffff';
+        picker.click();
+      };
+      if (data.color) td.querySelector('span').style.background = data.color;
+    } else {
+      td.contentEditable = 'true';
+      td.textContent = data.cells?.[i] || '';
+      if (i === 6 || i === 7 || i === 8) td.oninput = () => markNorm(td, i);
+    }
+    tr.appendChild(td);
+  }
+
+  // кнопка удаления
+  const del = document.createElement('td');
+  del.innerHTML = '<button onclick="this.closest(\'tr\').remove(); save()">✕</button>';
+  tr.appendChild(del);
+
+  tbody.appendChild(tr);
+  return tr;
+}
+
+picker.oninput = () => {
+  if (currentColorCell) {
+    currentColorCell.style.background = picker.value;
+    save();
+  }
+};
+
+function rgbToHex(rgb) {
+  const m = rgb.match(/\d+/g);
+  if (!m) return '#ffffff';
+  return '#' + m.slice(0,3).map(x => (+x).toString(16).padStart(2,'0')).join('');
+}
+
+// проверка нормы
+function markNorm(td, col) {
+  const v = parseFloat(td.textContent.replace(',', '.'));
+  td.classList.remove('ok','bad');
+  if (isNaN(v)) return;
+  const limits = { 6: 0.3, 7: 0.25 };
+  if (col === 6 || col === 7) {
+    td.classList.add(v < limits[col] ? 'ok' : 'bad');
+  }
+  if (col === 8) {
+    td.classList.add(v >= 0.02 && v <= 0.03 ? 'ok' : 'bad');
+  }
+}
+
+function addRow(data) {
+  makeRow(data);
+  save();
+}
+
+function save() {
+  const rows = [];
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const tds = tr.querySelectorAll('td');
+    const cells = [];
+    for (let i = 0; i < COLS; i++) {
+      cells.push(i === 3 ? '' : (tds[i].textContent || ''));
+    }
+    const color = tds[3].querySelector('span')?.style.background || '';
+    rows.push({ cells, color });
+  });
+  localStorage.setItem(KEY, JSON.stringify(rows));
+}
+
+function load() {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return false;
+  JSON.parse(raw).forEach(r => makeRow(r));
+  return true;
+}
+
+function exportCSV() {
+  let csv = 'Бренд;Вкус;Категория;Цвет;Мясо %;Цена;Кальций;Фосфор;Магний;Багира;Саша\n';
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const tds = tr.querySelectorAll('td');
+    const line = [];
+    for (let i = 0; i < COLS; i++) {
+      if (i === 3) line.push(tds[3].querySelector('span').style.background || '');
+      else line.push((tds[i].textContent || '').replace(/;/g, ','));
+    }
+    csv += line.join(';') + '\n';
+  });
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cat_food.csv';
+  a.click();
+}
+
+function clearAll() {
+  if (confirm('Удалить все строки?')) {
+    tbody.innerHTML = '';
+    localStorage.removeItem(KEY);
+  }
+}
+
+// ===== СОРТИРОВКА =====
+document.querySelectorAll('th.sortable').forEach(th => {
+  th.onclick = () => {
+    const col = +th.dataset.col;
+    const type = th.dataset.type || 'text';
+
+    if (sortState.col === col) sortState.dir *= -1;
+    else { sortState.col = col; sortState.dir = 1; }
+
+    document.querySelectorAll('th.sortable .arrow').forEach(a => a.textContent = '↕');
+    th.querySelector('.arrow').textContent = sortState.dir === 1 ? '▲' : '▼';
+
+    sortTable(col, type, sortState.dir);
+    save();
+  };
+});
+
+function sortTable(col, type, dir) {
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+
+  rows.sort((a, b) => {
+    const A = getCellValue(a, col, type);
+    const B = getCellValue(b, col, type);
+
+    if (A === null && B === null) return 0;
+    if (A === null) return 1;
+    if (B === null) return -1;
+
+    if (type === 'number') return (A - B) * dir;
+    return String(A).localeCompare(String(B), 'ru') * dir;
+  });
+
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+function getCellValue(tr, col, type) {
+  const tds = tr.querySelectorAll('td');
+  if (!tds[col]) return null;
+  let v = (tds[col].textContent || '').trim();
+  if (!v) return null;
+
+  if (type === 'number') {
+    v = v.replace(/[^\d,.\-]/g, '').replace(',', '.');
+    const n = parseFloat(v);
+    return isNaN(n) ? null : n;
+  }
+  return v.toLowerCase();
+}
+
+document.addEventListener('input', e => {
+  if (e.target.matches('td[contenteditable]')) save();
+});
+
+// старт
+if (!load()) {
+  addRow(); addRow(); addRow();
+}
+</script>
+</body>
+</html>
+```
+
